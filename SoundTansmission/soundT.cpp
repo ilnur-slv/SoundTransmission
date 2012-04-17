@@ -35,9 +35,33 @@ char* ParseData(string path = "C:\\spasti.wav")
 
 	cout << "(RIFF fmt) " << ( (mmRes == MMSYSERR_NOERROR) ? "No errors" : "Error" ) << endl; //--вывод ошибок если они есть--
 
-	//--(DATA) Читаем RIFF заголовок. Данные записвываем в WaveFormat----------------------------------------
+	//--(WaveFormat) Читаем RIFF заголовок. Формат аудиофайла записвываем в WaveFormat-----------------------
 
+	WAVEFORMATEX WaveFormat;
+	mmioRead(hMmio, (char*)&WaveFormat, sizeof(WaveFormat) );
 
+	//--Выводим параметры файла------------------------------------------------------------------------------
+
+	cout << endl;
+	cout << "Channel = " << WaveFormat.nChannels << endl;
+	cout << "Size = " << WaveFormat.cbSize << endl;
+	cout << "SamplesPerSec = " << WaveFormat.nSamplesPerSec << endl;
+	cout << "BitsPerSample = " << WaveFormat.wBitsPerSample << endl;
+	cout << "AvgBytesPerSec = " << WaveFormat.nAvgBytesPerSec << endl;
+	cout << endl;
+
+	//--(DATA) Читаем RIFF заголовок-------------------------------------------------------------------------
+
+	mmRes = mmioAscend(hMmio, &mmCkInfo, 0);
+	mmCkInfo.ckid = mmioFOURCC('d', 'a', 't', 'a');
+	mmRes = mmioDescend(hMmio, &mmCkInfo, &mmCkInfoRiff, MMIO_FINDCHUNK);
+
+	cout << "(RIFF data) " << ( (mmRes == MMSYSERR_NOERROR) ? "No errors" : "Error" ) << endl << endl; //--вывод ошибок если они есть--
+
+	//--Ура!!! Мы дошли до этого. Считываем аудио поток------------------------------------------------------
+
+	LPVOID pBuf = VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE );
+	if (!pBuf) mmioRead(hMmio, (HPSTR)pBuf, mmCkInfo.cksize);
 
 	//--Закрываем RIFF файл, где fuClose - это код ошибки----------------------------------------------------
 
