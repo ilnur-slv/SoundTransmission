@@ -23,9 +23,8 @@ HWAVEIN hWaveIn; //--устрйство записи--
 WAVEHDR WaveHdr; //--заголовок буфера--
 WAVEFORMATEX WaveFormat; //--формат записи--
 HWAVEOUT hWaveOut; //--устройство вывода--
-LPVOID pBuf; //--буфер с аудиопотоком--
-UCHAR *sound_buffer; //--буфер с аудиопотоком--
-int size;
+char *sound_buffer; //--аудиопоток--
+int size; //--размер аудиопотока--
 
 //--Печать текста в окошко-----------------------------------------------------------------------------------
 
@@ -66,14 +65,6 @@ int ParseData(string path)
 
 	mmioRead(hMmio, (char*)&WaveFormat, sizeof(WaveFormat) );
 
-	//--Выводим параметры файла------------------------------------------------------------------------------
-
-	//PrintText("Channel = " + WaveFormat.nChannels);
-	//PrintText("Size = " + WaveFormat.cbSize);
-	//PrintText("SamplesPerSec = " + WaveFormat.nSamplesPerSec);
-	//PrintText("BitsPerSample = " + WaveFormat.wBitsPerSample);
-	//PrintText("AvgBytesPerSec = " + WaveFormat.nAvgBytesPerSec);
-
 	//--(DATA) Читаем RIFF заголовок-------------------------------------------------------------------------
 
 	mmRes = mmioAscend(hMmio, &mmCkInfo, 0);
@@ -88,19 +79,10 @@ int ParseData(string path)
 
 	//--Ура!!! Мы дошли до этого. Считываем аудио поток------------------------------------------------------
 
-	/*LPVOID pBuf = VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE );
-	if (!pBuf) mmioRead(hMmio, (HPSTR)pBuf, mmCkInfo.cksize);*/
-
-	sound_buffer = new UCHAR[(int)VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE )];
+	sound_buffer = new char[(int)VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE )];
 	mmioRead(hMmio, (HPSTR)mmioRead(hMmio, (HPSTR)sound_buffer, mmCkInfo.cksize), mmCkInfo.cksize);
 
-	size = mmCkInfo.cksize;
-
-	//ofstream file;
-	//file.open("C:\\out.txt", ios_base::binary);
-	//for(int i=0;i<mmCkInfo.cksize; ++i)
-	//file << sound_buffer[i];
-	//file.close();
+	size = mmCkInfo.cksize; //--устанавливаем размер аудиофайла--
 
 	//--Закрываем RIFF файл----------------------------------------------------------------------------------
 
@@ -113,7 +95,7 @@ int ParseData(string path)
 
 void PlaySound(string path = "C:\\spasti.wav")
 {
-	//--Открытие аудиоустройства-----------------------------------------------------------------------------
+	//--Настраиваем качество аудиопотока---------------------------------------------------------------------
 
 	//WaveFormat.wFormatTag = WAVE_FORMAT_PCM; //--тип аудиоданных--
 	//WaveFormat.nChannels = 1; //--количество каналов--
@@ -123,7 +105,11 @@ void PlaySound(string path = "C:\\spasti.wav")
 	//WaveFormat.wBitsPerSample = 16; //--количество бит для выборки--
 	//WaveFormat.cbSize = 20; //--размер всей структуры--
 
+	//--ВыДеление данных из WAV файла------------------------------------------------------------------------
+
 	if(ParseData(path)) return;
+
+	//--Открытие аудиоустройства-----------------------------------------------------------------------------
 
 	MMRESULT mmRes = 
 		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW); //--открываем аудиоустройство--
@@ -132,26 +118,12 @@ void PlaySound(string path = "C:\\spasti.wav")
 
 	//--Подготовка буфера для записи-------------------------------------------------------------------------
 
-	//WaveHdr.lpData = malloc((DWORD)sound_buffer); //--указатель на буфер где хранятся записанные данные--
+	ZeroMemory(&WaveHdr, sizeof(WaveHdr)); //--обнуляем WaveHdr--
 
-	char *szBuffer = new char[size];
+	WaveHdr.lpData = sound_buffer; //--присваиваем аудиопоток для воспроизведения--
+	WaveHdr.dwBufferLength = size; //--размер аудиопотока--
 
-	for (UINT i=0; i<size; i++) // формируем звуковой массив случайных чисел (ШУМ)
-    {
-        szBuffer[i] = sound_buffer[i];
-    }
-
-	ZeroMemory(&WaveHdr, sizeof(WaveHdr));
-
-	WaveHdr.lpData = szBuffer;
-	WaveHdr.dwBufferLength = size; //--размер буфера--
-
-	//ofstream file;
-	//file.open("C:\\out.txt", ios_base::binary);
-	//file << WaveHdr.lpData;
-	//file.close();
-
-	//--Заполнение буфера------------------------------------------------------------------------------------
+	//--Заполнение аудиопотока------------------------------------------------------------------------------------
 
 	waveOutPrepareHeader(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
 	
@@ -225,9 +197,14 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 
 	case MM_WOM_DONE:
 		{
+			//--Очищаем память-------------------------------------------------------------------------------
+
 			waveOutUnprepareHeader(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
 			free(WaveHdr.lpData);
 			waveInClose(hWaveIn);
+
+			//--Действие если аудиопоток закончился----------------------------------------------------------
+
 			PrintText("Конец воспроизведения");
 		}
 		break;
