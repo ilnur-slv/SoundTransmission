@@ -24,6 +24,8 @@ WAVEHDR WaveHdr; //--заголовок буфера--
 WAVEFORMATEX WaveFormat; //--формат записи--
 HWAVEOUT hWaveOut; //--устройство вывода--
 LPVOID pBuf; //--буфер с аудиопотоком--
+UCHAR *sound_buffer; //--буфер с аудиопотоком--
+int size;
 
 //--Печать текста в окошко-----------------------------------------------------------------------------------
 
@@ -86,19 +88,23 @@ int ParseData(string path)
 
 	//--Ура!!! Мы дошли до этого. Считываем аудио поток------------------------------------------------------
 
-	pBuf = VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE );
-	if (!pBuf) mmioRead(hMmio, (HPSTR)pBuf, mmCkInfo.cksize);
+	/*LPVOID pBuf = VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE );
+	if (!pBuf) mmioRead(hMmio, (HPSTR)pBuf, mmCkInfo.cksize);*/
 
-	//--выводим поток в файл для проверки--------------------------------------------------------------------
+	sound_buffer = new UCHAR[(int)VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE )];
+	mmioRead(hMmio, (HPSTR)mmioRead(hMmio, (HPSTR)sound_buffer, mmCkInfo.cksize), mmCkInfo.cksize);
 
-	fstream file;
-	file.open("out.txt", ios_base::binary);
-	file<<pBuf;
-	file.close();
+	size = mmCkInfo.cksize;
+
+	//ofstream file;
+	//file.open("C:\\out.txt", ios_base::binary);
+	//for(int i=0;i<mmCkInfo.cksize; ++i)
+	//file << sound_buffer[i];
+	//file.close();
 
 	//--Закрываем RIFF файл----------------------------------------------------------------------------------
 
-	mmioClose(hMmio, NULL); //--закрываем RIFF файл--
+	mmioClose(hMmio, 0); //--закрываем RIFF файл--
 
 	return 0;
 }
@@ -120,18 +126,35 @@ void PlaySound(string path = "C:\\spasti.wav")
 	if(ParseData(path)) return;
 
 	MMRESULT mmRes = 
-		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, NULL, CALLBACK_WINDOW); //--открываем аудиоустройство--
+		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW); //--открываем аудиоустройство--
 
 	if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
 
 	//--Подготовка буфера для записи-------------------------------------------------------------------------
 
-	WaveHdr.lpData = (char*)malloc((ULONG)pBuf); //--указатель на буфер где хранятся записанные данные--
-	WaveHdr.dwBufferLength = (ULONG)pBuf; //--размер буфера--
+	//WaveHdr.lpData = malloc((DWORD)sound_buffer); //--указатель на буфер где хранятся записанные данные--
+
+	char *szBuffer = new char[size];
+
+	for (UINT i=0; i<size; i++) // формируем звуковой массив случайных чисел (ШУМ)
+    {
+        szBuffer[i] = sound_buffer[i];
+    }
+
+	ZeroMemory(&WaveHdr, sizeof(WaveHdr));
+
+	WaveHdr.lpData = szBuffer;
+	WaveHdr.dwBufferLength = size; //--размер буфера--
+
+	//ofstream file;
+	//file.open("C:\\out.txt", ios_base::binary);
+	//file << WaveHdr.lpData;
+	//file.close();
 
 	//--Заполнение буфера------------------------------------------------------------------------------------
 
 	waveOutPrepareHeader(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
+	
 	waveOutWrite(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
 }
 
@@ -205,6 +228,7 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 			waveOutUnprepareHeader(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
 			free(WaveHdr.lpData);
 			waveInClose(hWaveIn);
+			PrintText("Конец воспроизведения");
 		}
 		break;
 

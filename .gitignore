@@ -27,3 +27,6 @@ obj/
 [Rr]elease*/
 _ReSharper*/
 [Tt]est[Rr]esult*
+
+*.ipch
+ipch/soundtansmission-47d66149/soundtansmission-6765678d.ipch
