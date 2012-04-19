@@ -16,6 +16,7 @@ using namespace std;
 LRESULT CALLBACK MyFunc(HWND, UINT, WPARAM, LPARAM);
 
 char szWinName[] = "MyWin";
+string filename = "C:\\spasti.wav";
 
 HWND hWnd; //--главное окно--
 HWND hEdit; //--текстовое поле--
@@ -25,110 +26,16 @@ WAVEFORMATEX WaveFormat; //--формат записи--
 HWAVEOUT hWaveOut; //--устройство вывода--
 char *sound_buffer; //--аудиопоток--
 int size; //--размер аудиопотока--
+const int sizeWaveHdr = 8; //--количество аудиопотоков--
+WAVEHDR waveHdr[sizeWaveHdr]; //--массив для аудиопотоков--
+int bN = 0;
 
-//--Печать текста в окошко-----------------------------------------------------------------------------------
+//--Объявления функциий--------------------------------------------------------------------------------------
 
-void PrintText(string text)
-{
-	text += "\n";
-	int ndx = GetWindowTextLength (hEdit);
-	SetFocus (hEdit);
-	SendMessage (hEdit, EM_SETSEL, (WPARAM)ndx, (LPARAM)ndx); //--Устанавливаем курсор--
-	SendMessage (hEdit, EM_REPLACESEL, 0, (LPARAM)text.c_str()); //--Вставляем на место курсора текст--
-}
-
-//--Парсим wav файл и возвращаем буффер данных---------------------------------------------------------------
-
-int ParseData(string path)
-{
-	HMMIO hMmio = mmioOpen(strdup(path.c_str()), NULL, MMIO_READ | MMIO_ALLOCBUF); //--открываем RIFF файл. Разрешаем буферизацию--
-
-	if(hMmio == 0) PrintText("(mmioOpen) Error code: 0"); //--вывод ошибок если они есть--
-
-	//--(WAVE) Если файл открыт успешно, читаем RIFF заголовок-----------------------------------------------
-
-	MMCKINFO mmCkInfoRiff;
-	mmCkInfoRiff.fccType = mmioFOURCC('W', 'A', 'V', 'E');
-	MMRESULT mmRes = mmioDescend(hMmio, &mmCkInfoRiff, NULL, MMIO_FINDRIFF);
-
-	if(mmRes != MMSYSERR_NOERROR) PrintText("(RIFF WAVE) Error"); //--вывод ошибок если они есть--
-
-	//--(FMT) Читаем RIFF заголовок--------------------------------------------------------------------------
-
-	MMCKINFO mmCkInfo;
-	mmCkInfo.ckid = mmioFOURCC('f', 'm', 't', ' ');
-	mmRes = mmioDescend(hMmio, &mmCkInfo, &mmCkInfoRiff, MMIO_FINDCHUNK);
-
-	if(mmRes != MMSYSERR_NOERROR) PrintText("(RIFF fmt) Error"); //--вывод ошибок если они есть--
-
-	//--(WaveFormat) Читаем RIFF заголовок. Формат аудиофайла записвываем в WaveFormat-----------------------
-
-	mmioRead(hMmio, (char*)&WaveFormat, sizeof(WaveFormat) );
-
-	//--(DATA) Читаем RIFF заголовок-------------------------------------------------------------------------
-
-	mmRes = mmioAscend(hMmio, &mmCkInfo, 0);
-	mmCkInfo.ckid = mmioFOURCC('d', 'a', 't', 'a');
-	mmRes = mmioDescend(hMmio, &mmCkInfo, &mmCkInfoRiff, MMIO_FINDCHUNK);
-
-	if(mmRes != MMSYSERR_NOERROR)
-	{
-		PrintText("(RIFF data) Error"); //--вывод ошибок если они есть--
-		return 1;
-	}
-
-	//--Ура!!! Мы дошли до этого. Считываем аудио поток------------------------------------------------------
-
-	sound_buffer = new char[(int)VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE )];
-	mmioRead(hMmio, (HPSTR)mmioRead(hMmio, (HPSTR)sound_buffer, mmCkInfo.cksize), mmCkInfo.cksize);
-
-	size = mmCkInfo.cksize; //--устанавливаем размер аудиофайла--
-
-	//--Закрываем RIFF файл----------------------------------------------------------------------------------
-
-	mmioClose(hMmio, 0); //--закрываем RIFF файл--
-
-	return 0;
-}
-
-//--Воспроизводим аудиофайл----------------------------------------------------------------------------------
-
-void PlaySound(string path = "C:\\spasti.wav")
-{
-	//--Настраиваем качество аудиопотока---------------------------------------------------------------------
-
-	//WaveFormat.wFormatTag = WAVE_FORMAT_PCM; //--тип аудиоданных--
-	//WaveFormat.nChannels = 1; //--количество каналов--
-	//WaveFormat.nSamplesPerSec = 44100; //--норма отбора в секунду. Обычно 44100 Гц--
-	//WaveFormat.nBlockAlign = 2; //--выравнивание в байтах--
-	//WaveFormat.nAvgBytesPerSec = WaveFormat.nSamplesPerSec*WaveFormat.nBlockAlign; //--скорость передачи байтов в сек.--
-	//WaveFormat.wBitsPerSample = 16; //--количество бит для выборки--
-	//WaveFormat.cbSize = 20; //--размер всей структуры--
-
-	//--ВыДеление данных из WAV файла------------------------------------------------------------------------
-
-	if(ParseData(path)) return;
-
-	//--Открытие аудиоустройства-----------------------------------------------------------------------------
-
-	MMRESULT mmRes = 
-		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW); //--открываем аудиоустройство--
-
-	if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
-
-	//--Подготовка буфера для записи-------------------------------------------------------------------------
-
-	ZeroMemory(&WaveHdr, sizeof(WaveHdr)); //--обнуляем WaveHdr--
-
-	WaveHdr.lpData = sound_buffer; //--присваиваем аудиопоток для воспроизведения--
-	WaveHdr.dwBufferLength = size; //--размер аудиопотока--
-
-	//--Заполнение аудиопотока------------------------------------------------------------------------------------
-
-	waveOutPrepareHeader(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
-	
-	waveOutWrite(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
-}
+void PrintText(string text);   //--печать ошибок--
+int ParseData();               //--создание аудиопотока--
+void PlayBuffer(char *Buffer); //--воспроизведение буфера--
+void PlaySound();              //--воспроизведение--
 
 //--Сердце программы-----------------------------------------------------------------------------------------
 
@@ -182,7 +89,7 @@ int WINAPI WinMain(HINSTANCE hThisInst, HINSTANCE hPrevInst, LPSTR lpszArgs, int
 	return msg.wParam;
 }
 
-//--Обрабатываем события-------------------------------------------------------------------------------------
+#pragma region CALLBACK
 
 LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -199,9 +106,15 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 		{
 			//--Очищаем память-------------------------------------------------------------------------------
 
-			waveOutUnprepareHeader(hWaveOut, &WaveHdr, sizeof(WAVEHDR));
-			free(WaveHdr.lpData);
-			waveInClose(hWaveIn);
+			for(int i=0; i<sizeWaveHdr; ++i)
+			{
+				if(waveHdr[i].dwLoops == 1)
+				{
+					waveOutUnprepareHeader(hWaveOut, &waveHdr[i], sizeof(waveHdr));
+					free(waveHdr[i].lpData);
+				}
+			}
+			//waveOutClose(hWaveOut);
 
 			//--Действие если аудиопоток закончился----------------------------------------------------------
 
@@ -232,3 +145,161 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 
 	return DefWindowProc(this_hwnd, message, wParam, lParam);
 }
+
+#pragma endregion
+
+#pragma region Standart funtion
+
+//--Печать текста в окошко-----------------------------------------------------------------------------------
+
+void PrintText(string text)
+{
+	text += "\n";
+	int ndx = GetWindowTextLength (hEdit);
+	SetFocus (hEdit);
+	SendMessage (hEdit, EM_SETSEL, (WPARAM)ndx, (LPARAM)ndx); //--Устанавливаем курсор--
+	SendMessage (hEdit, EM_REPLACESEL, 0, (LPARAM)text.c_str()); //--Вставляем на место курсора текст--
+}
+
+//--Печать числа в окошко------------------------------------------------------------------------------------
+
+void PrintText(int number)
+{
+	char buf[100];
+	itoa(number,buf,10);
+
+	string text = buf;
+
+	int ndx = GetWindowTextLength (hEdit);
+	SetFocus (hEdit);
+	SendMessage (hEdit, EM_SETSEL, (WPARAM)ndx, (LPARAM)ndx); //--Устанавливаем курсор--
+	SendMessage (hEdit, EM_REPLACESEL, 0, (LPARAM)text.c_str()); //--Вставляем на место курсора текст--
+}
+
+//--Нахождение свободного потока-----------------------------------------------------------------------------
+
+int NextBufNumber()
+{
+	if(bN == sizeWaveHdr - 1)
+		bN = 0;
+	else
+		bN += 1;
+	return bN;
+}
+
+#pragma endregion
+
+#pragma region MMaudio
+
+//--Парсим wav файл и возвращаем буффер данных---------------------------------------------------------------
+
+int ParseData()
+{
+	//--открываем RIFF файл. Разрешаем буферизацию--
+	HMMIO hMmio = mmioOpen(strdup(filename.c_str()), NULL, MMIO_READ | MMIO_ALLOCBUF);
+
+	if(hMmio == 0) PrintText("(mmioOpen) Error code: 0"); //--вывод ошибок если они есть--
+
+	//--(WAVE) Если файл открыт успешно, читаем RIFF заголовок-----------------------------------------------
+
+	MMCKINFO mmCkInfoRiff;
+	mmCkInfoRiff.fccType = mmioFOURCC('W', 'A', 'V', 'E');
+	MMRESULT mmRes = mmioDescend(hMmio, &mmCkInfoRiff, NULL, MMIO_FINDRIFF);
+
+	if(mmRes != MMSYSERR_NOERROR) PrintText("(RIFF WAVE) Error"); //--вывод ошибок если они есть--
+
+	//--(FMT) Читаем RIFF заголовок--------------------------------------------------------------------------
+
+	MMCKINFO mmCkInfo;
+	mmCkInfo.ckid = mmioFOURCC('f', 'm', 't', ' ');
+	mmRes = mmioDescend(hMmio, &mmCkInfo, &mmCkInfoRiff, MMIO_FINDCHUNK);
+
+	if(mmRes != MMSYSERR_NOERROR) PrintText("(RIFF fmt) Error"); //--вывод ошибок если они есть--
+
+	//--(WaveFormat) Читаем RIFF заголовок. Формат аудиофайла записвываем в WaveFormat-----------------------
+
+	mmioRead(hMmio, (char*)&WaveFormat, sizeof(WaveFormat) );
+
+	//--(DATA) Читаем RIFF заголовок-------------------------------------------------------------------------
+
+	mmRes = mmioAscend(hMmio, &mmCkInfo, 0);
+	mmCkInfo.ckid = mmioFOURCC('d', 'a', 't', 'a');
+	mmRes = mmioDescend(hMmio, &mmCkInfo, &mmCkInfoRiff, MMIO_FINDCHUNK);
+
+	if(mmRes != MMSYSERR_NOERROR)
+	{
+		PrintText("(RIFF data) Error"); //--вывод ошибок если они есть--
+		return 1;
+	}
+
+	//--Ура!!! Мы дошли до этого. Считываем аудио поток------------------------------------------------------
+
+	sound_buffer = new char[(int)VirtualAlloc(NULL, mmCkInfo.cksize, MEM_COMMIT, PAGE_READWRITE )];
+	mmioRead(hMmio, (HPSTR)mmioRead(hMmio, (HPSTR)sound_buffer, mmCkInfo.cksize), mmCkInfo.cksize);
+
+	size = mmCkInfo.cksize; //--устанавливаем размер аудиофайла--
+
+	//--Закрываем RIFF файл----------------------------------------------------------------------------------
+
+	mmioClose(hMmio, 0); //--закрываем RIFF файл--
+
+	return 0;
+}
+
+//--Воспроизводим буфер--------------------------------------------------------------------------------------
+
+void PlayBuffer(char *Buffer){
+
+	//ofstream file;
+	//file.open("C:\\out.txt", ios_base::app);
+	//file.binary;
+	//for(int i=0; i < WaveFormat.nSamplesPerSec; ++i)
+	//file << *(Buffer + i);
+	//file.close();
+
+	//--Подготовка буфера для записи-------------------------------------------------------------------------
+
+	ZeroMemory(&waveHdr[bN], sizeof(waveHdr[bN])); //--обнуляем WaveHdr--
+
+	waveHdr[bN].lpData = Buffer; //--присваиваем аудиопоток для воспроизведения--
+	waveHdr[bN].dwBufferLength = WaveFormat.nSamplesPerSec; //--размер аудиопотока--
+	waveHdr[bN].dwFlags = WHDR_INQUEUE;
+	waveHdr[bN].dwLoops = 1;
+	//--Заполнение аудиопотока-------------------------------------------------------------------------------
+
+	waveOutPrepareHeader(hWaveOut, &waveHdr[bN], sizeof(waveHdr));
+	waveOutWrite(hWaveOut, &waveHdr[bN], sizeof(waveHdr));
+	NextBufNumber();
+}
+
+//--Воспроизводим аудиофайл----------------------------------------------------------------------------------
+
+void PlaySound()
+{
+	//--ВыДеление данных из WAV файла------------------------------------------------------------------------
+
+	if(ParseData()) return;
+
+	//--Открытие аудиоустройства-----------------------------------------------------------------------------
+
+	MMRESULT mmRes = 
+		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
+
+	if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
+
+	char *Buffer = new char[WaveFormat.nSamplesPerSec];
+
+	for(int i=0; i < (size/WaveFormat.nSamplesPerSec); ++i)
+	{
+		Buffer = (sound_buffer + (i * WaveFormat.nSamplesPerSec));
+		PlayBuffer(Buffer);
+	}
+}
+
+#pragma endregion
+
+#pragma region WinSocket
+
+
+
+#pragma endregion
