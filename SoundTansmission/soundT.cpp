@@ -5,24 +5,32 @@
 #include <MMSystem.h>
 #include <string.h>
 #include <fstream>
-
-
 #pragma comment( lib, "winmm" ) //--подключаем winmm.dll--
 
 using namespace std;
+
+#pragma region Declaration
+
+//--Идентификаторы кнопок и текстового поля------------------------------------------------------------------
 
 #define IDC_B1 (1234) //--кнопка воспроизведения--
 #define IDC_B2 (1235) //--кнопка выхода--
 #define IDC_B3 (1237) //--кнопка начала передачи--
 #define IDC_E1 (1236) //--текстовое поле для вывода ошибок--
 
+//--Объявления данных для работы с окном---------------------------------------------------------------------
+
 LRESULT CALLBACK MyFunc(HWND, UINT, WPARAM, LPARAM);
-
 char szWinName[] = "MyWin";
-string filename = "C:\\MoonlightSonata.wav";
-
 HWND hWnd; //--главное окно--
 HWND hEdit; //--текстовое поле--
+
+//--Место где лежит наш аудиофайл----------------------------------------------------------------------------
+
+string filename = "C:\\MoonlightSonata.wav";
+
+//--Объявления данных для работы с аудиоустройством----------------------------------------------------------
+
 HWAVEIN hWaveIn; //--устрйство записи--
 WAVEHDR WaveHdr; //--заголовок буфера--
 WAVEFORMATEX WaveFormat; //--формат записи--
@@ -37,17 +45,19 @@ int emptyBuffer = 0; //--номер очищаемого буфера--
 
 //--Объявления функциий--------------------------------------------------------------------------------------
 
-DWORD WINAPI ServerThread(LPVOID pParam);
-DWORD WINAPI ClientThread(LPVOID pParam);
-void PrintText(string text);			//--печать ошибок--
-void PrintText(int number);				//--печать ошибок--
-int ParseData();						//--создание аудиопотока--
-void PlayBuffer(char *Buffer);			//--воспроизведение буфера--
-DWORD WINAPI PlaySound(LPVOID pParam);  //--воспроизведение--
-DWORD WINAPI PlaySoundTest(LPVOID pParam);
+DWORD WINAPI ServerThread(LPVOID pParam); //--сервер--
+DWORD WINAPI ClientThread(LPVOID pParam); //--клиент--
+void PrintText(string text); //--печать ошибок--
+void PrintText(int number);	//--печать ошибок--
+int ParseData(); //--создание аудиопотока--
+void PlayBuffer(char *Buffer); //--воспроизведение буфера--
+DWORD WINAPI PlaySound(LPVOID pParam); //--просто воспроизведение аудиофайла--
+DWORD WINAPI PlaySoundTransmission(LPVOID pParam); //--воспроизведение аудиоданных полученных от сервера--
 
-//--Сердце программы-----------------------------------------------------------------------------------------
+#pragma endregion
 
+#pragma region WINAPI WinMain(...)
+//--"Сердце" программы---------------------------------------------------------------------------------------
 int WINAPI WinMain(HINSTANCE hThisInst, HINSTANCE hPrevInst, LPSTR lpszArgs, int nWinMode)
 {
 	MSG msg;
@@ -101,6 +111,7 @@ int WINAPI WinMain(HINSTANCE hThisInst, HINSTANCE hPrevInst, LPSTR lpszArgs, int
 
 	return msg.wParam;
 }
+#pragma endregion
 
 #pragma region CALLBACK
 
@@ -110,9 +121,6 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 	{
 	case WM_DESTROY:
 		PostQuitMessage(0);
-		break;
-
-	case WM_PAINT:
 		break;
 
 	case MM_WOM_DONE:
@@ -136,6 +144,8 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 		{
 			int idButton = (int) LOWORD(wParam); // идентификатор, который указан в CreateWindowEx
 
+			//--Кнопка Play для запуска клиента--------------------------------------------------------------
+
 			if(idButton == IDC_B1)
 			{
 				HANDLE	hThread1;
@@ -151,28 +161,23 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 				HANDLE	hThread2;
 				DWORD	dwThreadId2;
 
-				hThread2 = CreateThread(NULL, 0, PlaySoundTest, NULL, 0, &dwThreadId2);
-				//--Нужно добавить создание потока--
-				//--Этот поток должен работать так же как и PlaySound()--
+				hThread2 = CreateThread(NULL, 0, PlaySoundTransmission, NULL, 0, &dwThreadId2);
 			}
+
+			//--Кнопка Exit----------------------------------------------------------------------------------
 
 			if(idButton == IDC_B2)
 			{
-				HANDLE	hThread1;
-				DWORD	dwThreadId1;
-
-				hThread1 = CreateThread(NULL, 0, PlaySound, NULL, 0, &dwThreadId1);
-
-				//SendMessage(hWnd, WM_DESTROY, 0, 0);
+				SendMessage(hWnd, WM_DESTROY, 0, 0);
 			}
+
+			//--Кнопка Start для запуска сервера-------------------------------------------------------------
 
 			if(idButton == IDC_B3)
 			{
 				HANDLE	hThread2;
 				DWORD	dwThreadId2;
 				hThread2 = CreateThread(NULL, 0, ServerThread, NULL, 0, &dwThreadId2);
-				//--Нужно добавить создание потока--
-				//--Поток должен каждый раз обращатся к функции PlayBuffer()--
 			}
 
 			break;
@@ -187,7 +192,10 @@ LRESULT CALLBACK MyFunc(HWND this_hwnd,UINT message, WPARAM wParam, LPARAM lPara
 
 #pragma endregion
 
-#pragma region Standart funtion
+#pragma region Standart function
+
+//--Вывод данных в окошко------------------------------------------------------------------------------------
+#pragma region PrintText
 
 //--Печать текста в окошко-----------------------------------------------------------------------------------
 
@@ -215,8 +223,10 @@ void PrintText(int number)
 	SendMessage (hEdit, EM_REPLACESEL, 0, (LPARAM)text.c_str()); //--Вставляем на место курсора текст--
 }
 
-//--Нахождение свободного потока-----------------------------------------------------------------------------
+#pragma endregion
 
+//--Нахождение свободного потока-----------------------------------------------------------------------------
+#pragma region NextBufNumber
 int NextBufNumber()
 {
 	if(bN == sizeWaveHdr - 1)
@@ -225,13 +235,14 @@ int NextBufNumber()
 		bN += 1;
 	return bN;
 }
+#pragma endregion
 
 #pragma endregion
 
 #pragma region MMaudio
 
 //--Парсим wav файл и возвращаем буффер данных---------------------------------------------------------------
-
+#pragma region ParseData
 int ParseData()
 {
 	//--открываем RIFF файл. Разрешаем буферизацию--
@@ -284,67 +295,48 @@ int ParseData()
 
 	return 0;
 }
+#pragma endregion
 
-//--Воспроизводим буфер--------------------------------------------------------------------------------------
-
+//--Воспроизводим аудиопоток---------------------------------------------------------------------------------
+#pragma region PlayBuffer
 void PlayBuffer(char *Buffer){
 
-	//ofstream file;
-	//file.open("C:\\out.txt", ios_base::app);
-	//file.binary;
-	//for(int i=0; i < WaveFormat.nSamplesPerSec; ++i)
-	//file << *(Buffer + i);
-	//file.close();
-
-	//state[bN] = true;
-
-	////--Подготовка буфера для записи-------------------------------------------------------------------------
-
-	//ZeroMemory(&waveHdr[bN], sizeof(waveHdr[bN])); //--обнуляем WaveHdr--
-
-	//waveHdr[bN].lpData = Buffer; //--присваиваем аудиопоток для воспроизведения--
-	//waveHdr[bN].dwBufferLength = WaveFormat.nSamplesPerSec; //--размер аудиопотока--
-	//waveHdr[bN].dwFlags = WHDR_INQUEUE;
-	//waveHdr[bN].dwLoops = 1;
-	////--Заполнение аудиопотока-------------------------------------------------------------------------------
-
-	//waveOutPrepareHeader(hWaveOut, &waveHdr[bN], sizeof(WAVEHDR));
-
-	//waveOutWrite(hWaveOut, &waveHdr[bN], sizeof(WAVEHDR));
-
-	//NextBufNumber();
+	//--Подготовка буфера для записи-------------------------------------------------------------------------
 
 	WAVEHDR* whdr = new WAVEHDR();
 	ZeroMemory(&(*whdr), sizeof((*whdr))); //--обнуляем WaveHdr--
 
 	(*whdr).lpData = Buffer; //--присваиваем аудиопоток для воспроизведения--
 	(*whdr).dwBufferLength = WaveFormat.nSamplesPerSec; //--размер аудиопотока--
-	(*whdr).dwFlags = WHDR_INQUEUE;
-	(*whdr).dwLoops = 1;
+	(*whdr).dwFlags = WHDR_INQUEUE; //--указываем, что нужно добавить в очередь--
+	(*whdr).dwLoops = 1; //--я не знаю зачем это нужно--
+
 	//--Заполнение аудиопотока-------------------------------------------------------------------------------
 
 	waveOutPrepareHeader(hWaveOut, &(*whdr), sizeof(WAVEHDR));
-
 	waveOutWrite(hWaveOut, &(*whdr), sizeof(WAVEHDR));
 
 }
+#pragma endregion
 
 //--Воспроизводим аудиофайл----------------------------------------------------------------------------------
-
+#pragma region PlaySound
 DWORD WINAPI PlaySound(LPVOID pParam)
 {
 	//--ВыДеление данных из WAV файла------------------------------------------------------------------------
 
-	if(ParseData()) return 0;
+	if(ParseData()) return 0; //--программа закроется, если нельзя обработать данные--
 
 	//--Открытие аудиоустройства-----------------------------------------------------------------------------
 
-	MMRESULT mmRes = 
-		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
+	MMRESULT mmRes = waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
 
 	if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
 
+	//--заводим аудиопоток, который будем отправлять на воспроизведение--
 	char *Buffer = new char[WaveFormat.nSamplesPerSec];
+
+	//--последовательно передаем аудиопотоки на воспроизведение----------------------------------------------
 
 	for(int i=0; i < (size/WaveFormat.nSamplesPerSec); ++i)
 	{
@@ -353,21 +345,23 @@ DWORD WINAPI PlaySound(LPVOID pParam)
 		PlayBuffer(Buffer);
 	}
 }
+#pragma endregion
 
-DWORD WINAPI PlaySoundTest(LPVOID pParam)
+//--Воспроизводим аудиофайл, который передается сервером к клиенту-------------------------------------------
+#pragma region PlaySoundTransmission
+DWORD WINAPI PlaySoundTransmission(LPVOID pParam)
 {
-	//--ВыДеление данных из WAV файла------------------------------------------------------------------------
-
 	//--Открытие аудиоустройства-----------------------------------------------------------------------------
 
-	MMRESULT mmRes = 
-		waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
+	MMRESULT mmRes = waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
 
 	if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
 
+	//--заводим аудиопоток, который будем отправлять на воспроизведение--
 	char *Buffer = new char[WaveFormat.nSamplesPerSec];
+	int i=0; //--счетчик количества аудиопотоков--
 
-	int i=0;
+	//--Запуск бесконечного цикла для воспроизведения. Ждет пока sound_buffer заполнится данными-------------
 
 	while(1)
 	{
@@ -378,44 +372,49 @@ DWORD WINAPI PlaySoundTest(LPVOID pParam)
 		i++;
 	}
 }
+#pragma endregion
 
 #pragma endregion
 
 #pragma region WinSocket
 
-//--Server---------------------------------------------------------------------------------------------------
-
+//--Серверная часть. Передаем аудиопотоки--------------------------------------------------------------------
+#pragma region Server
 DWORD WINAPI ServerThread(LPVOID pParam)
 {
-	// Инициализируем библиотеку Winsock.
+	//--Инициализируем библиотеку Winsock--------------------------------------------------------------------
+
 	WSADATA wsaData;
 	int iResult = WSAStartup( MAKEWORD(2,2), &wsaData );
 	if ( iResult != NO_ERROR )
 		PrintText("Error at WSAStartup()\n");
 
-	// Получаем данные для инициализации
+	//--Получаем данные для инициализации--------------------------------------------------------------------
+
 	struct addrinfo *res = NULL, hints;
 	memset(&hints,0,sizeof(hints));
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	if ( getaddrinfo("127.0.0.1", "27015", &hints, &res) != 0 )
-	{// обработка ошибки 
+	{   //--обработка ошибки--
 		PrintText("Can't get initiaalization data!\n");
 		WSACleanup();
 		return 0;
 	}
-	// Инициализируем сокет
+
+	//--Инициализируем сокет---------------------------------------------------------------------------------
+
 	SOCKET m_socket;
 	m_socket = socket(res->ai_family, res->ai_socktype,res->ai_protocol);
 	if ( m_socket == INVALID_SOCKET ) 
-	{ // Обработка ошибки инициализации
+	{   //--обработка ошибки инициализации--
 		PrintText( "Error at socket(): %ld\n" );
 		freeaddrinfo(res);
 		WSACleanup();
 		return 0;
 	}
 	if ( bind( m_socket, res->ai_addr,res->ai_addrlen) == SOCKET_ERROR ) 
-	{ // Обработка ошибки связывания
+	{   //--обработка ошибки связывания--
 		PrintText( "bind() failed.\n" );
 		freeaddrinfo(res);
 		closesocket(m_socket);
@@ -423,11 +422,13 @@ DWORD WINAPI ServerThread(LPVOID pParam)
 		return 0;
 	}
 
-	// Переводим сокет с пассивное состояние - режим прослушивания.
+	//--Переводим сокет с пассивное состояние - режим прослушивания------------------------------------------
+
 	if ( listen( m_socket, 1 ) == SOCKET_ERROR )
 		PrintText( "Error listening on socket.\n");
 
-	// Принимаем входящее соединение.
+	//--Принимаем входящее соединение------------------------------------------------------------------------
+
 	SOCKET AcceptSocket;
 
 	PrintText( "Waiting for a client to connect...\n" );
@@ -442,77 +443,83 @@ DWORD WINAPI ServerThread(LPVOID pParam)
 	}
 	m_socket = AcceptSocket; 
 
-	// Получаем и передаем данные.
+	//--Передаем данные---------------------------------------------------------------------------
+
 	int bytesSent;
 
 	while(1)
 	{
-		//--ВыДеление данных из WAV файла------------------------------------------------------------------------
+		//--ВыДеление данных из WAV файла--------------------------------------------------------------------
 
 		if(ParseData()) return 0;
 
-		//--Открытие аудиоустройства-----------------------------------------------------------------------------
-
-		//MMRESULT mmRes = 
-		//	waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
-
-		//if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
+		//--Открытие аудиоустройства-------------------------------------------------------------------------
 
 		char *Buffer = new char[WaveFormat.nSamplesPerSec];
 
 		for(int i=0; i < (size/WaveFormat.nSamplesPerSec); ++i)
 		{
 			strcpy(Buffer,(sound_buffer + (i * WaveFormat.nSamplesPerSec)));
-			Sleep(100);
+			Sleep(50);
 
 			bytesSent = send( m_socket, Buffer, WaveFormat.nSamplesPerSec, 0 );
 			PrintText(i); PrintText(" - transmitted");
 		}
+
+		//--отпраляем команду "end" - конец аудиофайла--
+		bytesSent = send( m_socket, "end", WaveFormat.nSamplesPerSec, 0 );
+		return 0;
 	}
 
-	// Корректно завершаем работу
-	// Отключаем сокет
-	shutdown(m_socket,SD_BOTH);
-	// Освобождаем ресурсы, занятые информацией об адресе
-	freeaddrinfo(res);
-	// Закрываем сокет
-	closesocket(m_socket);
-	// Отключаем библиотеку Winsock
-	WSACleanup();
+	//--Корректно завершаем работу---------------------------------------------------------------------------
+	
+	shutdown(m_socket,SD_BOTH); //--Отключаем сокет--
+	freeaddrinfo(res); //--Освобождаем ресурсы, занятые информацией об адресе--
+	closesocket(m_socket); //--Закрываем сокет--
+	WSACleanup(); //--Отключаем библиотеку Winsock--
 
 	return 0;
 }
-//--Client---------------------------------------------------------------------------------------------------
+#pragma endregion
+
+//--Клиентская часть. Воспроизводим полученные аудиопотоки---------------------------------------------------
+#pragma region Client
 
 DWORD WINAPI ClientThread(LPVOID pParam){
-	// Инициализируем библиотеку Winsock.
+	//--Инициализируем библиотеку Winsock--------------------------------------------------------------------
+
 	WSADATA wsaData;
 	int iResult = WSAStartup( MAKEWORD(2,2), &wsaData );
 	if ( iResult != NO_ERROR )
 		PrintText("Error at WSAStartup()\n");
 
-	// Получаем данные для инициализации
+	//--Получаем данные для инициализации--------------------------------------------------------------------
+
 	struct addrinfo *res = NULL, hints;
 	memset(&hints,0,sizeof(hints));
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
 	if ( getaddrinfo("127.0.0.1", "27015", &hints, &res) != 0 )
-	{// обработка ошибки 
+	{	//--обработка ошибки--
 		PrintText("Can't get initiaalization data!\n");
 		WSACleanup();
 		return 0;
 	}
-	// Инициализируем сокет
+
+	//--Инициализируем сокет---------------------------------------------------------------------------------
+
 	SOCKET m_socket;
 	m_socket = socket(res->ai_family, res->ai_socktype,res->ai_protocol);
 	if ( m_socket == INVALID_SOCKET ) 
-	{ // Обработка ошибки инициализации
+	{   //--Обработка ошибки инициализации--
 		PrintText( "Error at socket(): %ld\n");
 		freeaddrinfo(res);
 		WSACleanup();
 		return 0;
 	}
-	// Подсоединяемся к серверу
+
+	//--Подсоединяемся к серверу-----------------------------------------------------------------------------
+
 	if ( connect( m_socket, res->ai_addr,res->ai_addrlen) == SOCKET_ERROR) {
 		PrintText( "Failed to connect.\n" );
 		closesocket(m_socket);
@@ -521,39 +528,34 @@ DWORD WINAPI ClientThread(LPVOID pParam){
 		return 0;
 	}
 
-	// Передаем и получаем данные.
+	//--Получаем данные--------------------------------------------------------------------------------------
+
 	int bytesRecv = SOCKET_ERROR;
 
-	/*bytesSent = send( m_socket, sendbuf, strlen(sendbuf), 0 );
-	printf( "Bytes Sent: %ld\n", bytesSent );*/
 	int k=0;
-
-	//MMRESULT mmRes = 
-	//	waveOutOpen(&hWaveOut, WAVE_MAPPER, &WaveFormat, (DWORD)hWnd, 0L, CALLBACK_WINDOW);
-
-	//if(mmRes != 0) PrintText("(waveOpen) Error code: " + mmRes); //--вывод ошибок если они есть--
 	
 	char *Buffer = new char[WaveFormat.nSamplesPerSec];
 
 	while( 1 ) {
 		bytesRecv = recv( m_socket, Buffer, WaveFormat.nSamplesPerSec, 0 );
+
+		if(Buffer[0] == 'e' && Buffer[1] == 'n' &&Buffer[2] == 'd') return 0;
+
 		strcat(sound_buffer,Buffer);
 		size += WaveFormat.nSamplesPerSec;
 		PrintText(k++); PrintText(" - add");
 	}
 
 
-	// Корректно завершаем работу
-	// Отключаем сокет
-	shutdown(m_socket,SD_BOTH);
-	// Освобождаем ресурсы, занятые информацией об адресе
-	freeaddrinfo(res);
-	// Закрываем сокет
-	closesocket(m_socket);
-	// Отключаем библиотеку Winsock
-	WSACleanup();
+	//--Корректно завершаем работу---------------------------------------------------------------------------
+	
+	shutdown(m_socket,SD_BOTH); //--Отключаем сокет--
+	freeaddrinfo(res); //--Освобождаем ресурсы, занятые информацией об адресе--
+	closesocket(m_socket); //--Закрываем сокет--
+	WSACleanup(); //--Отключаем библиотеку Winsock--
 
 	return 0;
 }
+#pragma endregion
 
 #pragma endregion
